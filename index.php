@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ASTROS - Sistema De Votação</title>
-    <link rel="shortcut icon" href="images/astros.png">
+    <link rel="shortcut icon" href="images/favicon.png" type="image/x-icon">
     <link rel="stylesheet" href="style.css">
 </head>
 
@@ -13,7 +13,7 @@
     <div id="tudo">
         <header class="topo">
             <img src="images/fatec.png" alt="Logo FATEC" class="logotop">
-            <h1>Votação Para Representante de Sala</h1>
+            <h1>Sistema de Eleição para Representante de Sala</h1>
             <img src="images/cps.png" alt="Logo Cps" class="logotop">
         </header>
         <main class="index">

@@ -4,8 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ASTROS - Sistema De Votação</title>
-    <link rel="shortcut icon" href="images/astros.png">
+    <title>ASTROS - Candidatura Aprovada</title>
+    <link rel="shortcut icon" href="images/favicon.png" type="image/x-icon">
     <link rel="stylesheet" href="style.css">
 </head>
 
@@ -13,14 +13,14 @@
     <div id="tudo">
         <header class="topo">
             <img src="images/fatec.png" alt="Logo FATEC" class="logotop">
-            <h1>Votação Para Representante de Sala</h1>
+            <h1>Sistema de Eleição para Representante de Sala</h1>
             <img src="images/cps.png" alt="Logo Cps" class="logotop">
         </header>
         <main>
             <div class="greenpopup">
                 <img src="images/edit.png">
                 <h2>CANDIDATURA APROVADA!</h2>
-                <h3>Um comprovante foi enviado para seu e-mail</h3>
+                <h3>Sua inscrição foi realizada com sucesso</h3>
                 <p><a href="votacoesaluno.php">Clique Aqui para voltar para as votações</a></p>
                 <span>.</span>
             </div> 

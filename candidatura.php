@@ -1,63 +1,241 @@
+<?php
+session_start();
+require_once 'conexao.php';
+date_default_timezone_set('America/Sao_Paulo');
+
+if (!isset($_SESSION['aluno'])) {
+    header('Location: logaluno.php');
+    exit;
+}
+
+$idaluno = (int)$_SESSION['aluno']['idaluno'];
+
+if (!isset($_GET['idvotacao'])) {
+    die("Votação inválida.");
+}
+$idvotacao = (int)$_GET['idvotacao'];
+
+// Busca votação
+$stmt = $pdo->prepare("SELECT * FROM tb_votacoes WHERE idvotacao = ?");
+$stmt->execute([$idvotacao]);
+$vot = $stmt->fetch();
+
+if (!$vot) {
+    die("Votação não encontrada.");
+}
+
+// Verifica período de candidatura
+$agora = new DateTime();
+$dataCandidatura = new DateTime($vot['data_candidatura']);
+$dataInicio = new DateTime($vot['data_inicio']);
+
+if ($agora < $dataCandidatura) {
+    die("O período de candidatura ainda não iniciou.");
+}
+
+if ($agora >= $dataInicio) {
+    die("O período de candidatura já encerrou.");
+}
+
+// Busca dados do aluno
+$stmt = $pdo->prepare("SELECT nome, email, ra, curso, semestre FROM tb_alunos WHERE idaluno = ?");
+$stmt->execute([$idaluno]);
+$aluno = $stmt->fetch();
+
+if (!$aluno) {
+    die("Aluno não encontrado.");
+}
+
+// Verifica se o aluno é do mesmo curso/semestre da votação
+if ($aluno['curso'] !== $vot['curso'] || (int)$aluno['semestre'] !== (int)$vot['semestre']) {
+    die("Você não pode se candidatar nesta votação. Curso ou semestre incompatível.");
+}
+
+// Verifica se já é candidato
+$stmt = $pdo->prepare("SELECT COUNT(*) as total FROM tb_candidatos WHERE ra = ? AND idvotacao = ?");
+$stmt->execute([$aluno['ra'], $idvotacao]);
+if ((int)$stmt->fetch()['total'] > 0) {
+    die("Você já está cadastrado como candidato nesta votação.");
+}
+
+// Pega mensagem de erro se houver
+$erro = $_SESSION['erro_candidatura'] ?? '';
+unset($_SESSION['erro_candidatura']);
+?>
 <!DOCTYPE html>
 <html lang="pt-br">
-
 <head>
-    <meta charset="UTF-8">
+    <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ASTROS - Sistema De Votação</title>
-    <link rel="shortcut icon" href="images/astros.png">
+    <title>ASTROS - Cadastro de Candidatura</title>
+    <link rel="shortcut icon" href="images/favicon.png" type="image/x-icon">
     <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
-    <div id="tudo">
-        <header class="topo">
-            <img src="images/fatec.png" alt="Logo FATEC" class="logotop">
-            <h1>Votação Para Representante de Sala</h1>
-            <img src="images/cps.png" alt="Logo Cps" class="logotop">
-        </header>
-        <main class="formmain">
-            <div id="formbox">
-                <h2>Realizar Candidatura</h2>
-                <form action="popupcandidatura.php" method="post">
-                    <label for="nome">Informe seu nome completo:</label><br>
-                    <input type="text" name="nomecandidato" placeholder="Nome Completo"><br>
-                    <label for="nome">Informe seu registro acadêmico:</label><br>
-                    <input type="text" name="RA" placeholder="ex: 2781392513000"><br>
-                    <label for="nome">Informe seu e-mail fatec:</label><br>
-                    <input type="text" name="email" placeholder="@fatec.sp.gov.br"><br>
-                    <div class="upload">
-                        <label for="imagem" class="btn-upload">Enviar foto para exibição</label>
-                        <input type="file" id="imagem" name="imagem">
-                    </div>
-                    <script>
-                        const input = document.getElementById('imagem');
-                        const mensagem = document.getElementById('mensagem');
+<div id="tudo">
+    <header class="topo">
+        <img src="images/fatec.png" alt="Logo FATEC" class="logotop">
+        <h1>Sistema de Eleição para Representante de Sala</h1>
+        <img src="images/cps.png" alt="Logo Cps" class="logotop">
+    </header>
 
-                        input.addEventListener('change', () => {
-                            if (input.files.length > 0) {
-                                alert("Imagem carregada com sucesso!");
-                                mensagem.style.color = 'green';
-                            } else {
-                                mensagem.textContent = '';
-                            }
-                        });
-                    </script>
-                    <input type="submit" value="Enviar Formulário">
-                </form>
+    <main class="formmain">
+        <div id="formbox">
+            <h2>Cadastro de Candidato</h2>
+            
+            <div style="background-color: #e8f4f8; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+                <p style="margin: 5px 0; font-size: 1.1rem;"><strong>Votação:</strong> <?= htmlspecialchars($vot['curso']) ?></p>
+                <p style="margin: 5px 0; font-size: 1.1rem;"><strong>Semestre:</strong> <?= htmlspecialchars($vot['semestre']) ?>º</p>
+                <p style="margin: 5px 0; font-size: 1.1rem;"><strong>Período de candidatura até:</strong> <?= (new DateTime($vot['data_inicio']))->format('d/m/Y') ?></p>
+            </div>
+
+            <?php if ($erro): ?>
+                <div class="erro">
+                    <span><?= htmlspecialchars($erro) ?></span>
                 </div>
-                <div class="finalizarsessao">
-                    <a href="votacoesaluno.php">
-                        <img src="images/log-out.png" alt="">
-                        <p>Voltar Para Votações</p>
-                    </a>
-                </div>
-        </main>
-        <footer class="rodape">
-            <img src="images/govsp.png" alt="" class="logosp">
-            <img src="images/astros.png" alt="" class="logobottom">
-        </footer>
+            <?php endif; ?>
+
+            <form method="POST" action="processa_candidatura.php" enctype="multipart/form-data" id="formCandidatura">
+                <input type="hidden" name="idvotacao" value="<?= $idvotacao ?>">
+
+                <label>Nome Completo</label>
+                <input type="text" name="nomealuno" value="<?= htmlspecialchars($aluno['nome']) ?>" required readonly style="background-color: #f0f0f0;">
+
+                <label>Email Institucional</label>
+                <input type="email" name="email" value="<?= htmlspecialchars($aluno['email']) ?>" required readonly style="background-color: #f0f0f0;">
+
+                <label>RA (Registro Acadêmico)</label>
+                <input type="text" name="ra" value="<?= htmlspecialchars($aluno['ra']) ?>" required readonly style="background-color: #f0f0f0;">
+
+                <label>Foto do Candidato</label>
+                <p style="font-size: 0.9rem; color: #666; margin: 5px 0 10px;">
+                    📸 Envie uma foto sua (JPG ou PNG, máximo 5MB)
+                </p>
+                
+                <label class="btn-upload" for="foto">
+                    📁 Escolher foto
+                </label>
+                <input type="file" id="foto" name="foto" accept="image/jpeg,image/jpg,image/png" required>
+                
+                <p id="nomeArquivo" style="font-size: 0.9rem; color: #333; margin-top: 10px; font-style: italic;">
+                    Nenhum arquivo selecionado
+                </p>
+                
+                <p style="font-size: 0.85rem; color: #a32024; margin-top: 5px; font-weight: bold;">
+                    * Campo obrigatório
+                </p>
+
+                <input type="submit" value="Enviar Candidatura">
+            </form>
+        </div>
+
+        <div class="finalizarsessao">
+            <a href="votacoesaluno.php">
+                <img src="images/log-out.png" alt=""> 
+                <p>Voltar</p>
+            </a>
+        </div>
+    </main>
+
+    <footer class="rodape">
+        <img src="images/govsp.png" alt="" class="logosp">
+        <img src="images/astros.png" alt="" class="logobottom">
+    </footer>
+</div>
+
+<!-- POPUP DE CONFIRMAÇÃO DE CANDIDATURA -->
+<div id="popupOverlayCandidatura" class="overlay" style="display:none;">
+    <div class="popup">
+        <img src="images/alert-triangle.png" alt="Alerta" class="popup-icon">
+        <h2>Confirmação de Candidatura</h2>
+        <p id="mensagemCandidatura">
+            Tem certeza que deseja enviar sua candidatura?<br><br>
+            <strong>Após a confirmação, não será possível editar ou remover sua candidatura.</strong><br><br>
+            Seus dados:
+        </p>
+        <div id="dadosCandidatura" style="background-color: #f0f0f0; padding: 15px; border-radius: 8px; margin: 15px 0; text-align: left;">
+            <p style="margin: 5px 0;"><strong>Nome:</strong> <span id="popupNome"></span></p>
+            <p style="margin: 5px 0;"><strong>Email:</strong> <span id="popupEmail"></span></p>
+            <p style="margin: 5px 0;"><strong>RA:</strong> <span id="popupRA"></span></p>
+            <p style="margin: 5px 0;"><strong>Foto:</strong> <span id="popupFoto"></span></p>
+        </div>
+        <button id="confirmarCandidatura" style="margin-top:15px;">
+            CONFIRMAR CANDIDATURA
+        </button>
+        <button id="cancelarCandidatura" style="margin-top:10px; background-color:#6c757d;">
+            CANCELAR
+        </button>
     </div>
-</body>
+</div>
 
+<script>
+const overlayCandidatura = document.getElementById("popupOverlayCandidatura");
+const formCandidatura = document.getElementById("formCandidatura");
+const confirmarBtn = document.getElementById("confirmarCandidatura");
+const cancelarBtn = document.getElementById("cancelarCandidatura");
+
+// Mostra o nome do arquivo selecionado
+document.getElementById('foto').addEventListener('change', function(e) {
+    const nomeArquivo = document.getElementById('nomeArquivo');
+    if (this.files && this.files[0]) {
+        nomeArquivo.textContent = '✓ ' + this.files[0].name;
+        nomeArquivo.style.color = '#147C0E';
+        nomeArquivo.style.fontWeight = 'bold';
+    } else {
+        nomeArquivo.textContent = 'Nenhum arquivo selecionado';
+        nomeArquivo.style.color = '#333';
+        nomeArquivo.style.fontWeight = 'normal';
+    }
+});
+
+// Intercepta o envio do formulário
+formCandidatura.addEventListener('submit', function(e) {
+    e.preventDefault(); // Impede o envio imediato
+    
+    const foto = document.getElementById('foto');
+    const nome = document.querySelector('input[name="nomealuno"]').value;
+    const email = document.querySelector('input[name="email"]').value;
+    const ra = document.querySelector('input[name="ra"]').value;
+    
+    // Validações
+    if (!foto.files || !foto.files[0]) {
+        alert('Por favor, selecione uma foto antes de enviar.');
+        return false;
+    }
+    
+    if (foto.files[0].size > 5 * 1024 * 1024) {
+        alert('A foto não pode ter mais de 5MB.');
+        return false;
+    }
+    
+    // Preenche dados no popup
+    document.getElementById('popupNome').textContent = nome;
+    document.getElementById('popupEmail').textContent = email;
+    document.getElementById('popupRA').textContent = ra;
+    document.getElementById('popupFoto').textContent = foto.files[0].name;
+    
+    // Mostra o popup
+    overlayCandidatura.style.display = "flex";
+});
+
+// Fechar popup clicando no fundo
+overlayCandidatura.addEventListener("click", function(e) {
+    if (e.target === overlayCandidatura) {
+        overlayCandidatura.style.display = "none";
+    }
+});
+
+// Botão cancelar
+cancelarBtn.addEventListener("click", function() {
+    overlayCandidatura.style.display = "none";
+});
+
+// Confirmar candidatura - envia o formulário
+confirmarBtn.addEventListener("click", function() {
+    overlayCandidatura.style.display = "none";
+    formCandidatura.submit(); // Agora sim envia o formulário
+});
+</script>
+
+</body>
 </html>

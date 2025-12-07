@@ -1,105 +1,125 @@
 <?php
 session_start();
 require_once 'conexao.php';
+date_default_timezone_set('America/Sao_Paulo');
 
-// Verifica login do admin
 if (!isset($_SESSION['admin'])) {
     die("Acesso negado.");
 }
 
-$idadmin = $_SESSION['admin']['idadmin'] ?? null;
-
-// Se por algum motivo não veio, bloqueia:
-if (!$idadmin) {
-    die("Erro de sessão: admin não identificado.");
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    header("Location: criarvotacao.php");
+    exit;
 }
 
-// Função de validação
-function validarVotacao($dados) {
-    $erros = [];
+$idadmin = $_SESSION['admin']['idadmin'];
 
-    if ($dados['curso'] === "0") {
-        $erros[] = "Selecione um curso válido.";
-    }
+$curso = trim($_POST['curso'] ?? '');
+$semestre = (int)($_POST['semestre'] ?? 0);
+$data_candidatura = $_POST['data_candidatura'] ?? '';
+$data_inicio = $_POST['data_inicio'] ?? '';
+$data_final = $_POST['data_final'] ?? '';
 
-    if ($dados['semestre'] === "0") {
-        $erros[] = "Selecione um semestre válido.";
-    }
+$erros = [];
 
-    if (empty($dados['datacand'])) {
-        $erros[] = "Informe a data de candidatura.";
-    }
-
-    if (empty($dados['datainicio'])) {
-        $erros[] = "Informe a data de início da votação.";
-    }
-
-    if (empty($dados['datafim'])) {
-        $erros[] = "Informe a data de encerramento da votação.";
-    }
-
-    // Criar timestamps
-    $c = strtotime($dados['datacand']);
-    $i = strtotime($dados['datainicio']);
-    $f = strtotime($dados['datafim']);
-
-    if ($c > $i) {
-        $erros[] = "A candidatura deve iniciar antes da votação.";
-    }
-
-    if ($i >= $f) {
-        $erros[] = "A votação deve encerrar APÓS o início.";
-    }
-
-    return $erros;
+// Validações básicas
+if ($curso === '' || $curso === '0') {
+    $erros[] = "Selecione um curso válido.";
 }
 
-// Apenas continua se for POST
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-
-    $erros = validarVotacao($_POST);
-
-    if (empty($erros)) {
-        try {
-            $curso = $_POST['curso'];
-            $semestre = $_POST['semestre'];
-
-            // Datas em formato datetime
-            $datacand = $_POST['datacand'] . " 00:00:00";
-            $datainicio = $_POST['datainicio'] . " 08:00:00";
-            $datafim = $_POST['datafim'] . " 23:59:59";
-
-            $sql = "INSERT INTO tb_votacoes 
-                    (curso, semestre, data_inicio, data_candidatura, data_final, idadmin)
-                    VALUES (?, ?, ?, ?, ?, ?)";
-
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute([
-                $curso,
-                $semestre,
-                $datainicio,
-                $datacand,
-                $datafim,
-                $idadmin
-            ]);
-
-            $_SESSION['sucesso_votacao'] = "Votação criada com sucesso!";
-            header("Location: paineladministrativo.php");
-            exit;
-
-        } catch (PDOException $e) {
-            $_SESSION['erro_votacao'] = "Erro ao criar votação!";
-            header("Location: criarvotacao.php");
-            exit;
-        }
-
-    } else {
-        // Junta os erros e envia de volta
-        $_SESSION['erro_votacao'] = implode("<br>", $erros);
-        header("Location: criarvotacao.php");
-        exit;
-    }
-
-} else {
-    die("Método inválido.");
+if ($semestre === 0) {
+    $erros[] = "Selecione um semestre válido.";
 }
+
+if (!$data_candidatura) {
+    $erros[] = "Informe a data de candidatura.";
+}
+
+if (!$data_inicio) {
+    $erros[] = "Informe a data de início da votação.";
+}
+
+if (!$data_final) {
+    $erros[] = "Informe a data final da votação.";
+}
+
+// Se já tem erros básicos, retorna
+if (!empty($erros)) {
+    $_SESSION['erros_votacao'] = $erros;
+    header("Location: criarvotacao.php");
+    exit;
+}
+
+// Validações de lógica de datas
+$datacand = strtotime($data_candidatura);
+$datainicio = strtotime($data_inicio);
+$datafim = strtotime($data_final);
+
+if ($datacand > $datainicio) {
+    $erros[] = "A data de candidatura deve ser anterior à data de início da votação.";
+}
+
+if ($datainicio >= $datafim) {
+    $erros[] = "A data final deve ser posterior à data de início.";
+}
+
+if (!empty($erros)) {
+    $_SESSION['erros_votacao'] = $erros;
+    header("Location: criarvotacao.php");
+    exit;
+}
+
+// Formata datas para o banco
+$datacandStr = $data_candidatura . " 00:00:00";
+$datainicioStr = $data_inicio . " 00:00:00";
+$datafimStr = $data_final . " 23:59:59";
+
+// Sempre ativa ao criar
+$ativa = "sim";
+
+try {
+    // Inicia transação
+    $pdo->beginTransaction();
+    
+    // Insere votação
+    $stmt = $pdo->prepare("
+        INSERT INTO tb_votacoes 
+        (curso, semestre, ativa, data_inicio, data_candidatura, data_final, idadmin)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ");
+
+    $stmt->execute([$curso, $semestre, $ativa, $datainicioStr, $datacandStr, $datafimStr, $idadmin]);
+    
+    $idvotacao = $pdo->lastInsertId();
+
+    // *** NOVO: Cria candidato de voto nulo específico para esta votação ***
+    $stmtNulo = $pdo->prepare("
+        INSERT INTO tb_candidatos (nomealuno, ra, email, idvotacao, imagem)
+        VALUES ('VOTO NULO', '0000000000000', 'nulo@sistema.local', ?, NULL)
+    ");
+    $stmtNulo->execute([$idvotacao]);
+
+    // Vincula alunos à votação
+    $upd = $pdo->prepare("
+        UPDATE tb_alunos 
+        SET idvotacao = ?
+        WHERE curso = ? AND semestre = ?
+    ");
+    $upd->execute([$idvotacao, $curso, $semestre]);
+
+    // Confirma transação
+    $pdo->commit();
+
+    $_SESSION['sucesso_votacao'] = "Votação criada com sucesso!";
+    header("Location: paineladministrativo.php");
+    exit;
+    
+} catch (PDOException $e) {
+    // Reverte transação em caso de erro
+    $pdo->rollBack();
+    error_log("Erro ao criar votação: " . $e->getMessage());
+    $_SESSION['erros_votacao'] = ["Erro no sistema. Por favor, contate o administrador."];
+    header("Location: criarvotacao.php");
+    exit;
+}
+?>
